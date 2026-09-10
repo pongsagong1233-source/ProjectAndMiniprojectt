@@ -12,7 +12,7 @@ $user_role = $_SESSION['role'] ?? 'guest';
 // --- จัดการ ACTIONS (เพิ่ม/ลบ โปรเจกต์ & คอมเมนต์) ---
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $is_logged_in) {
     
-    // 1. อาจารย์คอมเมนต์
+    // 1. อาจารย์หรือ Admin คอมเมนต์
     if (isset($_POST['action_comment']) && ($user_role === 'teacher' || $user_role === 'admin')) {
         $project_id = $_POST['project_id'];
         $comment_text = trim($_POST['comment_text']);
@@ -24,12 +24,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $is_logged_in) {
         exit;
     }
 
-    // 2. นักศึกษา/Admin เพิ่มโปรเจกต์
+    // 2. บันทึกโปรเจกต์ใหม่ (รวมคณะและสาขาวิชา)
     if (isset($_POST['action_add_project'])) {
         $title = trim($_POST['title']);
         $category = $_POST['category'];
         $student_name = ($user_role === 'student') ? $user_fullname : trim($_POST['student_name']);
         $advisor_name = trim($_POST['advisor_name']);
+        $faculty = trim($_POST['faculty'] ?? '');
+        $major = trim($_POST['major'] ?? '');
         $description = trim($_POST['description']);
         $github_link = trim($_POST['github_link']);
         $file_path = '';
@@ -42,14 +44,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $is_logged_in) {
             $file_path = $file_name;
         }
 
-        $stmt = $pdo->prepare("INSERT INTO projects (title, category, student_name, advisor_name, description, github_link, file_path) VALUES (?, ?, ?, ?, ?, ?, ?)");
-        $stmt->execute([$title, $category, $student_name, $advisor_name, $description, $github_link, $file_path]);
+        $stmt = $pdo->prepare("INSERT INTO projects (title, category, student_name, advisor_name, faculty, major, description, github_link, file_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        $stmt->execute([$title, $category, $student_name, $advisor_name, $faculty, $major, $description, $github_link, $file_path]);
         header("Location: index.php");
         exit;
     }
 }
 
-// 3. ลบโปรเจกต์ (นักศึกษาลบของตัวเองได้ / Admin ลบได้หมด)
+// 3. ลบโปรเจกต์
 if (isset($_GET['delete_id']) && $is_logged_in) {
     $del_id = $_GET['delete_id'];
     $stmt = $pdo->prepare("SELECT * FROM projects WHERE id = ?");
@@ -67,7 +69,7 @@ if (isset($_GET['delete_id']) && $is_logged_in) {
     exit;
 }
 
-// ดึงรายการโปรเจกต์ทั้งหมด + คอมเมนต์
+// ดึงรายการโปรเจกต์ทั้งหมด
 $stmt = $pdo->query("SELECT * FROM projects ORDER BY id DESC");
 $projects = $stmt->fetchAll(PDO::FETCH_ASSOC);
 ?>
@@ -84,7 +86,6 @@ $projects = $stmt->fetchAll(PDO::FETCH_ASSOC);
         body { font-family: 'Sarabun', sans-serif; background-color: #f8f9fa; }
         .hero-header { background: linear-gradient(135deg, #0A2540 0%, #0066CC 100%); color: white; border-bottom: 4px solid #EAAA00; }
         .card-project { border: none; border-radius: 12px; }
-        .role-badge { font-size: 0.75rem; padding: 3px 8px; border-radius: 20px; font-weight: 600; }
         .text-ellipsis { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
     </style>
 </head>
@@ -96,8 +97,6 @@ $projects = $stmt->fetchAll(PDO::FETCH_ASSOC);
             <div>
                 <h4 class="fw-bold mb-0"><i class="fa-solid fa-graduation-cap me-2"></i>คลังข้อมูลโปรเจกต์ SDU</h4>
             </div>
-
-            <!-- เมนูขวามือ -->
             <div>
                 <?php if ($is_logged_in): ?>
                     <div class="dropdown">
@@ -107,6 +106,9 @@ $projects = $stmt->fetchAll(PDO::FETCH_ASSOC);
                         <ul class="dropdown-menu dropdown-menu-end shadow border-0 mt-2">
                             <li><h6 class="dropdown-header">สิทธิ์การใช้งาน: <span class="badge bg-primary"><?= strtoupper($user_role) ?></span></h6></li>
                             <li><a class="dropdown-item fw-bold" href="profile.php"><i class="fa-solid fa-id-card me-2 text-primary"></i>ข้อมูลส่วนตัว</a></li>
+                            <?php if ($user_role === 'admin'): ?>
+                                <li><a class="dropdown-item fw-bold text-danger" href="admin/index.php"><i class="fa-solid fa-user-shield me-2"></i>ระบบ Admin</a></li>
+                            <?php endif; ?>
                             <li><hr class="dropdown-divider"></li>
                             <li><a class="dropdown-item text-danger fw-bold" href="logout.php"><i class="fa-solid fa-right-from-bracket me-2"></i>ออกจากระบบ</a></li>
                         </ul>
@@ -120,8 +122,6 @@ $projects = $stmt->fetchAll(PDO::FETCH_ASSOC);
     </header>
 
     <div class="container mb-5">
-        
-        <!-- แถบปุ่มสำหรับเพิ่มโปรเจกต์ -->
         <div class="d-flex justify-content-between align-items-center mb-4">
             <h5 class="fw-bold mb-0">รายการโปรเจกต์ทั้งหมด (<?= count($projects) ?>)</h5>
             <?php if ($is_logged_in && ($user_role === 'student' || $user_role === 'admin')): ?>
@@ -150,9 +150,12 @@ $projects = $stmt->fetchAll(PDO::FETCH_ASSOC);
                             <div class="small text-muted mb-2">
                                 <div><i class="fa-solid fa-user me-1 text-primary"></i> <strong>ผู้จัดทำ:</strong> <?= htmlspecialchars($row['student_name']) ?></div>
                                 <div><i class="fa-solid fa-user-tie me-1 text-success"></i> <strong>ที่ปรึกษา:</strong> <?= htmlspecialchars($row['advisor_name']) ?></div>
+                                <?php if (!empty($row['faculty'])): ?>
+                                    <div><i class="fa-solid fa-building-columns me-1 text-secondary"></i> <strong>คณะ:</strong> <?= htmlspecialchars($row['faculty']) ?></div>
+                                <?php endif; ?>
                             </div>
 
-                            <!-- ส่วนแสดง/เขียนคอมเมนต์อาจารย์ -->
+                            <!-- ส่วนเสนอแนะอาจารย์ -->
                             <div class="bg-light p-2 rounded mb-3">
                                 <small class="fw-bold text-dark d-block mb-1"><i class="fa-solid fa-comments me-1"></i> ความคิดเห็นอาจารย์:</small>
                                 <?php
@@ -221,6 +224,22 @@ $projects = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                             <div class="fw-semibold text-dark"><?= htmlspecialchars($row['advisor_name']) ?></div>
                                         </div>
                                     </div>
+                                    <?php if (!empty($row['faculty'])): ?>
+                                    <div class="col-md-6">
+                                        <div class="p-3 bg-light rounded">
+                                            <small class="text-muted d-block fw-bold mb-1"><i class="fa-solid fa-building-columns text-secondary me-1"></i> คณะ</small>
+                                            <div class="fw-semibold text-dark"><?= htmlspecialchars($row['faculty']) ?></div>
+                                        </div>
+                                    </div>
+                                    <?php endif; ?>
+                                    <?php if (!empty($row['major'])): ?>
+                                    <div class="col-md-6">
+                                        <div class="p-3 bg-light rounded">
+                                            <small class="text-muted d-block fw-bold mb-1"><i class="fa-solid fa-book-bookmark text-info me-1"></i> สาขาวิชา / หลักสูตร</small>
+                                            <div class="fw-semibold text-dark"><?= htmlspecialchars($row['major']) ?></div>
+                                        </div>
+                                    </div>
+                                    <?php endif; ?>
                                 </div>
 
                                 <div class="mb-4">
@@ -250,58 +269,89 @@ $projects = $stmt->fetchAll(PDO::FETCH_ASSOC);
                         </div>
                     </div>
                 </div>
-
             <?php endforeach; ?>
         </div>
     </div>
 
     <!-- Modal ฟอร์มเพิ่มโปรเจกต์ -->
     <div class="modal fade" id="addProjectModal" tabindex="-1">
-        <div class="modal-dialog">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
             <div class="modal-content border-0 shadow">
                 <div class="modal-header bg-dark text-white">
-                    <h5 class="modal-title fw-bold">เพิ่มโปรเจกต์ใหม่</h5>
+                    <h5 class="modal-title fw-bold"><i class="fa-solid fa-folder-plus me-2 text-warning"></i>เพิ่มโปรเจกต์ใหม่</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <form method="POST" enctype="multipart/form-data">
-                    <div class="modal-body">
+                    <div class="modal-body p-4">
                         <input type="hidden" name="action_add_project" value="1">
-                        <div class="mb-3">
-                            <label class="form-label small fw-bold">ชื่อโปรเจกต์ *</label>
-                            <input type="text" name="title" class="form-control" required>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label small fw-bold">ประเภท *</label>
-                            <select name="category" class="form-select">
-                                <option value="Project">Project</option>
-                                <option value="Mini Project">Mini Project</option>
-                            </select>
-                        </div>
-                        <?php if ($user_role !== 'student'): ?>
-                        <div class="mb-3">
-                            <label class="form-label small fw-bold">ชื่อผู้จัดทำ *</label>
-                            <input type="text" name="student_name" class="form-control" required>
-                        </div>
-                        <?php endif; ?>
-                        <div class="mb-3">
-                            <label class="form-label small fw-bold">อาจารย์ที่ปรึกษา *</label>
-                            <input type="text" name="advisor_name" class="form-control" required placeholder="ระบุชื่ออาจารย์ที่ปรึกษา">
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label small fw-bold">รายละเอียด</label>
-                            <textarea name="description" class="form-control" rows="3"></textarea>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label small fw-bold">ลิงก์ GitHub / ผลงาน</label>
-                            <input type="url" name="github_link" class="form-control">
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label small fw-bold">อัปโหลดไฟล์ (PDF, ZIP)</label>
-                            <input type="file" name="project_file" class="form-control">
+                        
+                        <div class="row g-3">
+                            <div class="col-md-8">
+                                <label class="form-label small fw-bold">ชื่อโปรเจกต์ *</label>
+                                <input type="text" name="title" class="form-control" required placeholder="กรอกชื่อโปรเจกต์">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label small fw-bold">ประเภท *</label>
+                                <select name="category" class="form-select">
+                                    <option value="Project">Project</option>
+                                    <option value="Mini Project">Mini Project</option>
+                                </select>
+                            </div>
+
+                            <?php if ($user_role !== 'student'): ?>
+                            <div class="col-md-6">
+                                <label class="form-label small fw-bold">ชื่อผู้จัดทำ *</label>
+                                <input type="text" name="student_name" class="form-control" required placeholder="กรอกชื่อ-นามสกุล นักศึกษา">
+                            </div>
+                            <?php endif; ?>
+
+                            <div class="col-md-6">
+                                <label class="form-label small fw-bold">อาจารย์ที่ปรึกษา *</label>
+                                <input type="text" name="advisor_name" class="form-control" required placeholder="ระบุชื่ออาจารย์ที่ปรึกษา">
+                            </div>
+
+                            <!-- ตัวเลือก คณะ -->
+                            <div class="col-md-6">
+                                <label class="form-label small fw-bold">คณะ *</label>
+                                <select name="faculty" id="modalFacultySelect" class="form-select" onchange="updateModalMajors()" required>
+                                    <option value="">-- เลือกคณะ --</option>
+                                    <option value="วิทยาศาสตร์และเทคโนโลยี">คณะวิทยาศาสตร์และเทคโนโลยี</option>
+                                    <option value="วิทยาการจัดการ">คณะวิทยาการจัดการ</option>
+                                    <option value="ครุศาสตร์">คณะครุศาสตร์</option>
+                                    <option value="มนุษยศาสตร์และสังคมศาสตร์">คณะมนุษยศาสตร์และสังคมศาสตร์</option>
+                                    <option value="พยาบาลศาสตร์">คณะพยาบาลศาสตร์</option>
+                                    <option value="โรงเรียนการเรือน">โรงเรียนการเรือน</option>
+                                    <option value="โรงเรียนการท่องเที่ยวและการบริการ">โรงเรียนการท่องเที่ยวและการบริการ</option>
+                                </select>
+                            </div>
+
+                            <!-- ตัวเลือก สาขาวิชา/หลักสูตร -->
+                            <div class="col-md-6">
+                                <label class="form-label small fw-bold">สาขาวิชา / หลักสูตร *</label>
+                                <select name="major" id="modalMajorSelect" class="form-select" required>
+                                    <option value="">-- กรุณาเลือกคณะก่อน --</option>
+                                </select>
+                            </div>
+
+                            <div class="col-12">
+                                <label class="form-label small fw-bold">รายละเอียด / บทคัดย่อ</label>
+                                <textarea name="description" class="form-control" rows="3" placeholder="อธิบายรายละเอียดโปรเจกต์สังเขป..."></textarea>
+                            </div>
+
+                            <div class="col-md-6">
+                                <label class="form-label small fw-bold">ลิงก์ GitHub / ผลงาน</label>
+                                <input type="url" name="github_link" class="form-control" placeholder="https://github.com/...">
+                            </div>
+
+                            <div class="col-md-6">
+                                <label class="form-label small fw-bold">อัปโหลดไฟล์ (PDF, ZIP)</label>
+                                <input type="file" name="project_file" class="form-control">
+                            </div>
                         </div>
                     </div>
-                    <div class="modal-footer">
-                        <button type="submit" class="btn btn-primary w-100 fw-bold">บันทึกข้อมูล</button>
+                    <div class="modal-footer bg-light">
+                        <button type="button" class="btn btn-secondary rounded-pill px-4" data-bs-dismiss="modal">ยกเลิก</button>
+                        <button type="submit" class="btn btn-primary rounded-pill px-4 fw-bold">บันทึกข้อมูล</button>
                     </div>
                 </form>
             </div>
@@ -309,5 +359,33 @@ $projects = $stmt->fetchAll(PDO::FETCH_ASSOC);
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+    const majorsList = {
+        "วิทยาศาสตร์และเทคโนโลยี": ["วิทยาการคอมพิวเตอร์", "เทคโนโลยีสารสนเทศ", "อนามัยสิ่งแวดล้อม", "เทคโนโลยีประกอบอาหาร"],
+        "วิทยาการจัดการ": ["การตลาด", "การเงิน", "การจัดการ", "บัญชี"],
+        "ครุศาสตร์": ["การศึกษาปฐมวัย", "ประถมศึกษา", "จิตวิทยาการแนะแนว"],
+        "มนุษยศาสตร์และสังคมศาสตร์": ["ภาษาอังกฤษ", "ภาษาไทย", "การออกแบบบรรจุภัณฑ์"],
+        "พยาบาลศาสตร์": ["พยาบาลศาสตร์"],
+        "โรงเรียนการเรือน": ["เทคโนโลยีการประกอบอาหารและและการประกอบอาหาร", "โภชนาการและการประกอบอาหาร"],
+        "โรงเรียนการท่องเที่ยวและการบริการ": ["การท่องเที่ยว", "การโรงแรม", "ธุรกิจการบิน"]
+    };
+
+    function updateModalMajors() {
+        const facultySelect = document.getElementById('modalFacultySelect');
+        const majorSelect = document.getElementById('modalMajorSelect');
+        const selectedFaculty = facultySelect.value;
+
+        majorSelect.innerHTML = '<option value="">-- เลือกสาขาวิชา --</option>';
+
+        if (selectedFaculty && majorsList[selectedFaculty]) {
+            majorsList[selectedFaculty].forEach(major => {
+                const option = document.createElement('option');
+                option.value = major;
+                option.textContent = major;
+                majorSelect.appendChild(option);
+            });
+        }
+    }
+    </script>
 </body>
 </html>
