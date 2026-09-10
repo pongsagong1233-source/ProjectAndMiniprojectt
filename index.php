@@ -85,6 +85,7 @@ $projects = $stmt->fetchAll(PDO::FETCH_ASSOC);
         .hero-header { background: linear-gradient(135deg, #0A2540 0%, #0066CC 100%); color: white; border-bottom: 4px solid #EAAA00; }
         .card-project { border: none; border-radius: 12px; }
         .role-badge { font-size: 0.75rem; padding: 3px 8px; border-radius: 20px; font-weight: 600; }
+        .text-ellipsis { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
     </style>
 </head>
 <body>
@@ -120,7 +121,7 @@ $projects = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     <div class="container mb-5">
         
-        <!-- แถบปุ่มสำหรับเพิ่มโปรเจกต์ (นักศึกษา / Admin) -->
+        <!-- แถบปุ่มสำหรับเพิ่มโปรเจกต์ -->
         <div class="d-flex justify-content-between align-items-center mb-4">
             <h5 class="fw-bold mb-0">รายการโปรเจกต์ทั้งหมด (<?= count($projects) ?>)</h5>
             <?php if ($is_logged_in && ($user_role === 'student' || $user_role === 'admin')): ?>
@@ -142,8 +143,8 @@ $projects = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                     <a href="index.php?delete_id=<?= $row['id'] ?>" class="btn btn-outline-danger btn-sm border-0" onclick="return confirm('ยืนยันลบโปรเจกต์นี้?')"><i class="fa-solid fa-trash"></i></a>
                                 <?php endif; ?>
                             </div>
-                            <h5 class="fw-bold text-dark"><?= htmlspecialchars($row['title']) ?></h5>
-                            <p class="text-muted small flex-grow-1"><?= htmlspecialchars($row['description']) ?></p>
+                            <h5 class="fw-bold text-dark mb-1"><?= htmlspecialchars($row['title']) ?></h5>
+                            <p class="text-muted small text-ellipsis flex-grow-1"><?= htmlspecialchars($row['description']) ?></p>
                             
                             <hr class="my-2 opacity-25">
                             <div class="small text-muted mb-2">
@@ -159,11 +160,15 @@ $projects = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                 $c_stmt->execute([$row['id']]);
                                 $comments = $c_stmt->fetchAll();
                                 ?>
-                                <?php foreach ($comments as $c): ?>
-                                    <div class="small border-bottom py-1">
-                                        <strong><?= htmlspecialchars($c['fullname']) ?>:</strong> <?= htmlspecialchars($c['comment_text']) ?>
-                                    </div>
-                                <?php endforeach; ?>
+                                <?php if (empty($comments)): ?>
+                                    <small class="text-muted d-block fst-italic">ยังไม่มีความคิดเห็น</small>
+                                <?php else: ?>
+                                    <?php foreach ($comments as $c): ?>
+                                        <div class="small border-bottom py-1">
+                                            <strong><?= htmlspecialchars($c['fullname']) ?>:</strong> <?= htmlspecialchars($c['comment_text']) ?>
+                                        </div>
+                                    <?php endforeach; ?>
+                                <?php endif; ?>
 
                                 <?php if ($is_logged_in && ($user_role === 'teacher' || $user_role === 'admin')): ?>
                                     <form method="POST" class="mt-2">
@@ -176,19 +181,81 @@ $projects = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                 <?php endif; ?>
                             </div>
 
+                            <!-- ปุ่มการทำงาน -->
                             <div class="d-flex gap-2 mt-auto">
+                                <button class="btn btn-outline-primary btn-sm w-100 fw-bold" data-bs-toggle="modal" data-bs-target="#viewModal<?= $row['id'] ?>">
+                                    <i class="fa-solid fa-eye me-1"></i> รายละเอียด
+                                </button>
                                 <?php if (!empty($row['file_path'])): ?>
-                                    <a href="uploads/<?= htmlspecialchars($row['file_path']) ?>" download class="btn btn-primary btn-sm w-100"><i class="fa-solid fa-download me-1"></i> ดาวน์โหลดไฟล์</a>
+                                    <a href="uploads/<?= htmlspecialchars($row['file_path']) ?>" download class="btn btn-primary btn-sm w-100 fw-bold"><i class="fa-solid fa-download me-1"></i> ดาวน์โหลด</a>
                                 <?php endif; ?>
                             </div>
                         </div>
                     </div>
                 </div>
+
+                <!-- Modal รายละเอียดโปรเจกต์ -->
+                <div class="modal fade" id="viewModal<?= $row['id'] ?>" tabindex="-1">
+                    <div class="modal-dialog modal-dialog-centered modal-lg">
+                        <div class="modal-content border-0 shadow">
+                            <div class="modal-header bg-primary text-white">
+                                <h5 class="modal-title fw-bold"><i class="fa-solid fa-circle-info me-2"></i>รายละเอียดโปรเจกต์</h5>
+                                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                            </div>
+                            <div class="modal-body p-4">
+                                <div class="mb-3">
+                                    <span class="badge bg-warning text-dark fs-6"><?= htmlspecialchars($row['category']) ?></span>
+                                </div>
+                                <h4 class="fw-bold text-dark mb-3"><?= htmlspecialchars($row['title']) ?></h4>
+                                
+                                <div class="row g-3 mb-4">
+                                    <div class="col-md-6">
+                                        <div class="p-3 bg-light rounded">
+                                            <small class="text-muted d-block fw-bold mb-1"><i class="fa-solid fa-user text-primary me-1"></i> ผู้จัดทำ</small>
+                                            <div class="fw-semibold text-dark"><?= htmlspecialchars($row['student_name']) ?></div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="p-3 bg-light rounded">
+                                            <small class="text-muted d-block fw-bold mb-1"><i class="fa-solid fa-user-tie text-success me-1"></i> อาจารย์ที่ปรึกษา</small>
+                                            <div class="fw-semibold text-dark"><?= htmlspecialchars($row['advisor_name']) ?></div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="mb-4">
+                                    <h6 class="fw-bold text-dark"><i class="fa-solid fa-align-left me-2 text-secondary"></i>รายละเอียด / บทคัดย่อ</h6>
+                                    <div class="p-3 bg-light rounded text-secondary" style="white-space: pre-line; line-height: 1.6;">
+                                        <?= !empty($row['description']) ? htmlspecialchars($row['description']) : 'ไม่มีรายละเอียดเพิ่มเติม' ?>
+                                    </div>
+                                </div>
+
+                                <?php if (!empty($row['github_link'])): ?>
+                                    <div class="mb-4">
+                                        <h6 class="fw-bold text-dark"><i class="fa-brands fa-github me-2"></i>ลิงก์ผลงาน / GitHub</h6>
+                                        <a href="<?= htmlspecialchars($row['github_link']) ?>" target="_blank" class="text-decoration-none fw-bold"><i class="fa-solid fa-arrow-up-right-from-square me-1"></i> <?= htmlspecialchars($row['github_link']) ?></a>
+                                    </div>
+                                <?php endif; ?>
+
+                                <?php if (!empty($row['file_path'])): ?>
+                                    <div class="mb-2">
+                                        <h6 class="fw-bold text-dark"><i class="fa-solid fa-file-pdf me-2 text-danger"></i>เอกสารประกอบ</h6>
+                                        <a href="uploads/<?= htmlspecialchars($row['file_path']) ?>" download class="btn btn-outline-primary btn-sm rounded-pill fw-bold"><i class="fa-solid fa-download me-1"></i> ดาวน์โหลดไฟล์เอกสาร</a>
+                                    </div>
+                                <?php endif; ?>
+                            </div>
+                            <div class="modal-footer bg-light">
+                                <button type="button" class="btn btn-secondary rounded-pill px-4" data-bs-dismiss="modal">ปิดหน้าต่าง</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
             <?php endforeach; ?>
         </div>
     </div>
 
-    <!-- Modal: ฟอร์มเพิ่มโปรเจกต์ -->
+    <!-- Modal ฟอร์มเพิ่มโปรเจกต์ -->
     <div class="modal fade" id="addProjectModal" tabindex="-1">
         <div class="modal-dialog">
             <div class="modal-content border-0 shadow">
