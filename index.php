@@ -24,7 +24,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $is_logged_in) {
         exit;
     }
 
-    // 2. บันทึกโปรเจกต์ใหม่ (รวมคณะและสาขาวิชา)
+    // 2. บันทึกโปรเจกต์ใหม่
     if (isset($_POST['action_add_project'])) {
         $title = trim($_POST['title']);
         $category = $_POST['category'];
@@ -69,8 +69,27 @@ if (isset($_GET['delete_id']) && $is_logged_in) {
     exit;
 }
 
-// ดึงรายการโปรเจกต์ทั้งหมด
-$stmt = $pdo->query("SELECT * FROM projects ORDER BY id DESC");
+// --- ค้นหาโปรเจกต์ (Search System) ---
+$search = trim($_GET['search'] ?? '');
+$filter_category = trim($_GET['category'] ?? '');
+
+$sql = "SELECT * FROM projects WHERE 1=1";
+$params = [];
+
+if (!empty($search)) {
+    $sql .= " AND (title LIKE ? OR student_name LIKE ? OR advisor_name LIKE ? OR faculty LIKE ? OR major LIKE ? OR description LIKE ?)";
+    $searchTerm = "%{$search}%";
+    $params = array_merge($params, [$searchTerm, $searchTerm, $searchTerm, $searchTerm, $searchTerm, $searchTerm]);
+}
+
+if (!empty($filter_category)) {
+    $sql .= " AND category = ?";
+    $params[] = $filter_category;
+}
+
+$sql .= " ORDER BY id DESC";
+$stmt = $pdo->prepare($sql);
+$stmt->execute($params);
 $projects = $stmt->fetchAll(PDO::FETCH_ASSOC);
 ?>
 <!DOCTYPE html>
@@ -87,6 +106,7 @@ $projects = $stmt->fetchAll(PDO::FETCH_ASSOC);
         .hero-header { background: linear-gradient(135deg, #0A2540 0%, #0066CC 100%); color: white; border-bottom: 4px solid #EAAA00; }
         .card-project { border: none; border-radius: 12px; }
         .text-ellipsis { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+        .search-box { background: #ffffff; border-radius: 12px; padding: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
     </style>
 </head>
 <body>
@@ -122,8 +142,39 @@ $projects = $stmt->fetchAll(PDO::FETCH_ASSOC);
     </header>
 
     <div class="container mb-5">
+        
+        <!-- ส่วนฟอร์มพิมพ์ค้นหา -->
+        <div class="search-box mb-4">
+            <form method="GET" action="index.php" class="row g-2 align-items-center">
+                <div class="col-md-7">
+                    <div class="input-group">
+                        <span class="input-group-text bg-white border-end-0 text-muted"><i class="fa-solid fa-magnifying-glass"></i></span>
+                        <input type="text" name="search" class="form-control border-start-0 ps-0" placeholder="พิมพ์ชื่อโปรเจกต์, ผู้จัดทำ, อาจารย์ที่ปรึกษา, คณะ..." value="<?= htmlspecialchars($search) ?>">
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <select name="category" class="form-select">
+                        <option value="">-- ทั้งหมดทุกประเภท --</option>
+                        <option value="Project" <?= $filter_category === 'Project' ? 'selected' : '' ?>>Project</option>
+                        <option value="Mini Project" <?= $filter_category === 'Mini Project' ? 'selected' : '' ?>>Mini Project</option>
+                    </select>
+                </div>
+                <div class="col-md-2 d-flex gap-1">
+                    <button type="submit" class="btn btn-primary w-100 fw-bold"><i class="fa-solid fa-search me-1"></i> ค้นหา</button>
+                    <?php if (!empty($search) || !empty($filter_category)): ?>
+                        <a href="index.php" class="btn btn-outline-secondary"><i class="fa-solid fa-rotate-left"></i></a>
+                    <?php endif; ?>
+                </div>
+            </form>
+        </div>
+
         <div class="d-flex justify-content-between align-items-center mb-4">
-            <h5 class="fw-bold mb-0">รายการโปรเจกต์ทั้งหมด (<?= count($projects) ?>)</h5>
+            <h5 class="fw-bold mb-0">
+                รายการโปรเจกต์ทั้งหมด (<?= count($projects) ?>)
+                <?php if (!empty($search)): ?>
+                    <span class="badge bg-info text-dark fs-6 fw-normal ms-2">ผลการค้นหา: "<?= htmlspecialchars($search) ?>"</span>
+                <?php endif; ?>
+            </h5>
             <?php if ($is_logged_in && ($user_role === 'student' || $user_role === 'admin')): ?>
                 <button class="btn btn-success fw-bold rounded-pill" data-bs-toggle="modal" data-bs-target="#addProjectModal">
                     <i class="fa-solid fa-plus me-1"></i> เพิ่มโปรเจกต์ใหม่
@@ -133,143 +184,150 @@ $projects = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
         <!-- รายการโปรเจกต์ -->
         <div class="row g-4">
-            <?php foreach ($projects as $row): ?>
-                <div class="col-md-6 col-lg-4">
-                    <div class="card card-project shadow-sm h-100 p-3">
-                        <div class="card-body d-flex flex-column">
-                            <div class="d-flex justify-content-between align-items-start mb-2">
-                                <span class="badge bg-warning text-dark"><?= htmlspecialchars($row['category']) ?></span>
-                                <?php if ($is_logged_in && ($user_role === 'admin' || ($user_role === 'student' && $row['student_name'] === $user_fullname))): ?>
-                                    <a href="index.php?delete_id=<?= $row['id'] ?>" class="btn btn-outline-danger btn-sm border-0" onclick="return confirm('ยืนยันลบโปรเจกต์นี้?')"><i class="fa-solid fa-trash"></i></a>
-                                <?php endif; ?>
-                            </div>
-                            <h5 class="fw-bold text-dark mb-1"><?= htmlspecialchars($row['title']) ?></h5>
-                            <p class="text-muted small text-ellipsis flex-grow-1"><?= htmlspecialchars($row['description']) ?></p>
-                            
-                            <hr class="my-2 opacity-25">
-                            <div class="small text-muted mb-2">
-                                <div><i class="fa-solid fa-user me-1 text-primary"></i> <strong>ผู้จัดทำ:</strong> <?= htmlspecialchars($row['student_name']) ?></div>
-                                <div><i class="fa-solid fa-user-tie me-1 text-success"></i> <strong>ที่ปรึกษา:</strong> <?= htmlspecialchars($row['advisor_name']) ?></div>
-                                <?php if (!empty($row['faculty'])): ?>
-                                    <div><i class="fa-solid fa-building-columns me-1 text-secondary"></i> <strong>คณะ:</strong> <?= htmlspecialchars($row['faculty']) ?></div>
-                                <?php endif; ?>
-                            </div>
-
-                            <!-- ส่วนเสนอแนะอาจารย์ -->
-                            <div class="bg-light p-2 rounded mb-3">
-                                <small class="fw-bold text-dark d-block mb-1"><i class="fa-solid fa-comments me-1"></i> ความคิดเห็นอาจารย์:</small>
-                                <?php
-                                $c_stmt = $pdo->prepare("SELECT c.*, u.fullname FROM comments c JOIN users u ON c.user_id = u.id WHERE c.project_id = ? ORDER BY c.id ASC");
-                                $c_stmt->execute([$row['id']]);
-                                $comments = $c_stmt->fetchAll();
-                                ?>
-                                <?php if (empty($comments)): ?>
-                                    <small class="text-muted d-block fst-italic">ยังไม่มีความคิดเห็น</small>
-                                <?php else: ?>
-                                    <?php foreach ($comments as $c): ?>
-                                        <div class="small border-bottom py-1">
-                                            <strong><?= htmlspecialchars($c['fullname']) ?>:</strong> <?= htmlspecialchars($c['comment_text']) ?>
-                                        </div>
-                                    <?php endforeach; ?>
-                                <?php endif; ?>
-
-                                <?php if ($is_logged_in && ($user_role === 'teacher' || $user_role === 'admin')): ?>
-                                    <form method="POST" class="mt-2">
-                                        <input type="hidden" name="project_id" value="<?= $row['id'] ?>">
-                                        <div class="input-group input-group-sm">
-                                            <input type="text" name="comment_text" class="form-control" placeholder="เขียนเสนอแนะ..." required>
-                                            <button type="submit" name="action_comment" class="btn btn-primary"><i class="fa-solid fa-paper-plane"></i></button>
-                                        </div>
-                                    </form>
-                                <?php endif; ?>
-                            </div>
-
-                            <!-- ปุ่มการทำงาน -->
-                            <div class="d-flex gap-2 mt-auto">
-                                <button class="btn btn-outline-primary btn-sm w-100 fw-bold" data-bs-toggle="modal" data-bs-target="#viewModal<?= $row['id'] ?>">
-                                    <i class="fa-solid fa-eye me-1"></i> รายละเอียด
-                                </button>
-                                <?php if (!empty($row['file_path'])): ?>
-                                    <a href="uploads/<?= htmlspecialchars($row['file_path']) ?>" download class="btn btn-primary btn-sm w-100 fw-bold"><i class="fa-solid fa-download me-1"></i> ดาวน์โหลด</a>
-                                <?php endif; ?>
-                            </div>
-                        </div>
-                    </div>
+            <?php if (empty($projects)): ?>
+                <div class="col-12 text-center py-5">
+                    <i class="fa-solid fa-folder-open text-muted fs-1 mb-3"></i>
+                    <h5 class="text-muted">ไม่พบข้อมูลโปรเจกต์ที่ค้นหา</h5>
                 </div>
-
-                <!-- Modal รายละเอียดโปรเจกต์ -->
-                <div class="modal fade" id="viewModal<?= $row['id'] ?>" tabindex="-1">
-                    <div class="modal-dialog modal-dialog-centered modal-lg">
-                        <div class="modal-content border-0 shadow">
-                            <div class="modal-header bg-primary text-white">
-                                <h5 class="modal-title fw-bold"><i class="fa-solid fa-circle-info me-2"></i>รายละเอียดโปรเจกต์</h5>
-                                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                            </div>
-                            <div class="modal-body p-4">
-                                <div class="mb-3">
-                                    <span class="badge bg-warning text-dark fs-6"><?= htmlspecialchars($row['category']) ?></span>
+            <?php else: ?>
+                <?php foreach ($projects as $row): ?>
+                    <div class="col-md-6 col-lg-4">
+                        <div class="card card-project shadow-sm h-100 p-3">
+                            <div class="card-body d-flex flex-column">
+                                <div class="d-flex justify-content-between align-items-start mb-2">
+                                    <span class="badge bg-warning text-dark"><?= htmlspecialchars($row['category']) ?></span>
+                                    <?php if ($is_logged_in && ($user_role === 'admin' || ($user_role === 'student' && $row['student_name'] === $user_fullname))): ?>
+                                        <a href="index.php?delete_id=<?= $row['id'] ?>" class="btn btn-outline-danger btn-sm border-0" onclick="return confirm('ยืนยันลบโปรเจกต์นี้?')"><i class="fa-solid fa-trash"></i></a>
+                                    <?php endif; ?>
                                 </div>
-                                <h4 class="fw-bold text-dark mb-3"><?= htmlspecialchars($row['title']) ?></h4>
+                                <h5 class="fw-bold text-dark mb-1"><?= htmlspecialchars($row['title']) ?></h5>
+                                <p class="text-muted small text-ellipsis flex-grow-1"><?= htmlspecialchars($row['description']) ?></p>
                                 
-                                <div class="row g-3 mb-4">
-                                    <div class="col-md-6">
-                                        <div class="p-3 bg-light rounded">
-                                            <small class="text-muted d-block fw-bold mb-1"><i class="fa-solid fa-user text-primary me-1"></i> ผู้จัดทำ</small>
-                                            <div class="fw-semibold text-dark"><?= htmlspecialchars($row['student_name']) ?></div>
-                                        </div>
-                                    </div>
-                                    <div class="col-md-6">
-                                        <div class="p-3 bg-light rounded">
-                                            <small class="text-muted d-block fw-bold mb-1"><i class="fa-solid fa-user-tie text-success me-1"></i> อาจารย์ที่ปรึกษา</small>
-                                            <div class="fw-semibold text-dark"><?= htmlspecialchars($row['advisor_name']) ?></div>
-                                        </div>
-                                    </div>
+                                <hr class="my-2 opacity-25">
+                                <div class="small text-muted mb-2">
+                                    <div><i class="fa-solid fa-user me-1 text-primary"></i> <strong>ผู้จัดทำ:</strong> <?= htmlspecialchars($row['student_name']) ?></div>
+                                    <div><i class="fa-solid fa-user-tie me-1 text-success"></i> <strong>ที่ปรึกษา:</strong> <?= htmlspecialchars($row['advisor_name']) ?></div>
                                     <?php if (!empty($row['faculty'])): ?>
-                                    <div class="col-md-6">
-                                        <div class="p-3 bg-light rounded">
-                                            <small class="text-muted d-block fw-bold mb-1"><i class="fa-solid fa-building-columns text-secondary me-1"></i> คณะ</small>
-                                            <div class="fw-semibold text-dark"><?= htmlspecialchars($row['faculty']) ?></div>
-                                        </div>
-                                    </div>
-                                    <?php endif; ?>
-                                    <?php if (!empty($row['major'])): ?>
-                                    <div class="col-md-6">
-                                        <div class="p-3 bg-light rounded">
-                                            <small class="text-muted d-block fw-bold mb-1"><i class="fa-solid fa-book-bookmark text-info me-1"></i> สาขาวิชา / หลักสูตร</small>
-                                            <div class="fw-semibold text-dark"><?= htmlspecialchars($row['major']) ?></div>
-                                        </div>
-                                    </div>
+                                        <div><i class="fa-solid fa-building-columns me-1 text-secondary"></i> <strong>คณะ:</strong> <?= htmlspecialchars($row['faculty']) ?></div>
                                     <?php endif; ?>
                                 </div>
 
-                                <div class="mb-4">
-                                    <h6 class="fw-bold text-dark"><i class="fa-solid fa-align-left me-2 text-secondary"></i>รายละเอียด / บทคัดย่อ</h6>
-                                    <div class="p-3 bg-light rounded text-secondary" style="white-space: pre-line; line-height: 1.6;">
-                                        <?= !empty($row['description']) ? htmlspecialchars($row['description']) : 'ไม่มีรายละเอียดเพิ่มเติม' ?>
-                                    </div>
+                                <!-- ส่วนเสนอแนะอาจารย์ -->
+                                <div class="bg-light p-2 rounded mb-3">
+                                    <small class="fw-bold text-dark d-block mb-1"><i class="fa-solid fa-comments me-1"></i> ความคิดเห็นอาจารย์:</small>
+                                    <?php
+                                    $c_stmt = $pdo->prepare("SELECT c.*, u.fullname FROM comments c JOIN users u ON c.user_id = u.id WHERE c.project_id = ? ORDER BY c.id ASC");
+                                    $c_stmt->execute([$row['id']]);
+                                    $comments = $c_stmt->fetchAll();
+                                    ?>
+                                    <?php if (empty($comments)): ?>
+                                        <small class="text-muted d-block fst-italic">ยังไม่มีความคิดเห็น</small>
+                                    <?php else: ?>
+                                        <?php foreach ($comments as $c): ?>
+                                            <div class="small border-bottom py-1">
+                                                <strong><?= htmlspecialchars($c['fullname']) ?>:</strong> <?= htmlspecialchars($c['comment_text']) ?>
+                                            </div>
+                                        <?php endforeach; ?>
+                                    <?php endif; ?>
+
+                                    <?php if ($is_logged_in && ($user_role === 'teacher' || $user_role === 'admin')): ?>
+                                        <form method="POST" class="mt-2">
+                                            <input type="hidden" name="project_id" value="<?= $row['id'] ?>">
+                                            <div class="input-group input-group-sm">
+                                                <input type="text" name="comment_text" class="form-control" placeholder="เขียนเสนอแนะ..." required>
+                                                <button type="submit" name="action_comment" class="btn btn-primary"><i class="fa-solid fa-paper-plane"></i></button>
+                                            </div>
+                                        </form>
+                                    <?php endif; ?>
                                 </div>
 
-                                <?php if (!empty($row['github_link'])): ?>
-                                    <div class="mb-4">
-                                        <h6 class="fw-bold text-dark"><i class="fa-brands fa-github me-2"></i>ลิงก์ผลงาน / GitHub</h6>
-                                        <a href="<?= htmlspecialchars($row['github_link']) ?>" target="_blank" class="text-decoration-none fw-bold"><i class="fa-solid fa-arrow-up-right-from-square me-1"></i> <?= htmlspecialchars($row['github_link']) ?></a>
-                                    </div>
-                                <?php endif; ?>
-
-                                <?php if (!empty($row['file_path'])): ?>
-                                    <div class="mb-2">
-                                        <h6 class="fw-bold text-dark"><i class="fa-solid fa-file-pdf me-2 text-danger"></i>เอกสารประกอบ</h6>
-                                        <a href="uploads/<?= htmlspecialchars($row['file_path']) ?>" download class="btn btn-outline-primary btn-sm rounded-pill fw-bold"><i class="fa-solid fa-download me-1"></i> ดาวน์โหลดไฟล์เอกสาร</a>
-                                    </div>
-                                <?php endif; ?>
-                            </div>
-                            <div class="modal-footer bg-light">
-                                <button type="button" class="btn btn-secondary rounded-pill px-4" data-bs-dismiss="modal">ปิดหน้าต่าง</button>
+                                <!-- ปุ่มการทำงาน -->
+                                <div class="d-flex gap-2 mt-auto">
+                                    <button class="btn btn-outline-primary btn-sm w-100 fw-bold" data-bs-toggle="modal" data-bs-target="#viewModal<?= $row['id'] ?>">
+                                        <i class="fa-solid fa-eye me-1"></i> รายละเอียด
+                                    </button>
+                                    <?php if (!empty($row['file_path'])): ?>
+                                        <a href="uploads/<?= htmlspecialchars($row['file_path']) ?>" download class="btn btn-primary btn-sm w-100 fw-bold"><i class="fa-solid fa-download me-1"></i> ดาวน์โหลด</a>
+                                    <?php endif; ?>
+                                </div>
                             </div>
                         </div>
                     </div>
-                </div>
-            <?php endforeach; ?>
+
+                    <!-- Modal รายละเอียดโปรเจกต์ -->
+                    <div class="modal fade" id="viewModal<?= $row['id'] ?>" tabindex="-1">
+                        <div class="modal-dialog modal-dialog-centered modal-lg">
+                            <div class="modal-content border-0 shadow">
+                                <div class="modal-header bg-primary text-white">
+                                    <h5 class="modal-title fw-bold"><i class="fa-solid fa-circle-info me-2"></i>รายละเอียดโปรเจกต์</h5>
+                                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                                </div>
+                                <div class="modal-body p-4">
+                                    <div class="mb-3">
+                                        <span class="badge bg-warning text-dark fs-6"><?= htmlspecialchars($row['category']) ?></span>
+                                    </div>
+                                    <h4 class="fw-bold text-dark mb-3"><?= htmlspecialchars($row['title']) ?></h4>
+                                    
+                                    <div class="row g-3 mb-4">
+                                        <div class="col-md-6">
+                                            <div class="p-3 bg-light rounded">
+                                                <small class="text-muted d-block fw-bold mb-1"><i class="fa-solid fa-user text-primary me-1"></i> ผู้จัดทำ</small>
+                                                <div class="fw-semibold text-dark"><?= htmlspecialchars($row['student_name']) ?></div>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="p-3 bg-light rounded">
+                                                <small class="text-muted d-block fw-bold mb-1"><i class="fa-solid fa-user-tie text-success me-1"></i> อาจารย์ที่ปรึกษา</small>
+                                                <div class="fw-semibold text-dark"><?= htmlspecialchars($row['advisor_name']) ?></div>
+                                            </div>
+                                        </div>
+                                        <?php if (!empty($row['faculty'])): ?>
+                                        <div class="col-md-6">
+                                            <div class="p-3 bg-light rounded">
+                                                <small class="text-muted d-block fw-bold mb-1"><i class="fa-solid fa-building-columns text-secondary me-1"></i> คณะ</small>
+                                                <div class="fw-semibold text-dark"><?= htmlspecialchars($row['faculty']) ?></div>
+                                            </div>
+                                        </div>
+                                        <?php endif; ?>
+                                        <?php if (!empty($row['major'])): ?>
+                                        <div class="col-md-6">
+                                            <div class="p-3 bg-light rounded">
+                                                <small class="text-muted d-block fw-bold mb-1"><i class="fa-solid fa-book-bookmark text-info me-1"></i> สาขาวิชา / หลักสูตร</small>
+                                                <div class="fw-semibold text-dark"><?= htmlspecialchars($row['major']) ?></div>
+                                            </div>
+                                        </div>
+                                        <?php endif; ?>
+                                    </div>
+
+                                    <div class="mb-4">
+                                        <h6 class="fw-bold text-dark"><i class="fa-solid fa-align-left me-2 text-secondary"></i>รายละเอียด / บทคัดย่อ</h6>
+                                        <div class="p-3 bg-light rounded text-secondary" style="white-space: pre-line; line-height: 1.6;">
+                                            <?= !empty($row['description']) ? htmlspecialchars($row['description']) : 'ไม่มีรายละเอียดเพิ่มเติม' ?>
+                                        </div>
+                                    </div>
+
+                                    <?php if (!empty($row['github_link'])): ?>
+                                        <div class="mb-4">
+                                            <h6 class="fw-bold text-dark"><i class="fa-brands fa-github me-2"></i>ลิงก์ผลงาน / GitHub</h6>
+                                            <a href="<?= htmlspecialchars($row['github_link']) ?>" target="_blank" class="text-decoration-none fw-bold"><i class="fa-solid fa-arrow-up-right-from-square me-1"></i> <?= htmlspecialchars($row['github_link']) ?></a>
+                                        </div>
+                                    <?php endif; ?>
+
+                                    <?php if (!empty($row['file_path'])): ?>
+                                        <div class="mb-2">
+                                            <h6 class="fw-bold text-dark"><i class="fa-solid fa-file-pdf me-2 text-danger"></i>เอกสารประกอบ</h6>
+                                            <a href="uploads/<?= htmlspecialchars($row['file_path']) ?>" download class="btn btn-outline-primary btn-sm rounded-pill fw-bold"><i class="fa-solid fa-download me-1"></i> ดาวน์โหลดไฟล์เอกสาร</a>
+                                        </div>
+                                    <?php endif; ?>
+                                </div>
+                                <div class="modal-footer bg-light">
+                                    <button type="button" class="btn btn-secondary rounded-pill px-4" data-bs-dismiss="modal">ปิดหน้าต่าง</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                <?php endforeach; ?>
+            <?php endif; ?>
         </div>
     </div>
 
@@ -310,7 +368,6 @@ $projects = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                 <input type="text" name="advisor_name" class="form-control" required placeholder="ระบุชื่ออาจารย์ที่ปรึกษา">
                             </div>
 
-                            <!-- ตัวเลือก คณะ -->
                             <div class="col-md-6">
                                 <label class="form-label small fw-bold">คณะ *</label>
                                 <select name="faculty" id="modalFacultySelect" class="form-select" onchange="updateModalMajors()" required>
@@ -325,7 +382,6 @@ $projects = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                 </select>
                             </div>
 
-                            <!-- ตัวเลือก สาขาวิชา/หลักสูตร -->
                             <div class="col-md-6">
                                 <label class="form-label small fw-bold">สาขาวิชา / หลักสูตร *</label>
                                 <select name="major" id="modalMajorSelect" class="form-select" required>
